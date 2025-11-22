@@ -17,6 +17,7 @@ public class PlayerController : MonoBehaviour
     
     [Header("Detección de Suelo")]
     public LayerMask capaSuelo;
+    public LayerMask capaMuerte; // Capa que mata al jugador (el terreno de abajo)
 
     [Header("Rotación")]
     public float velocidadRotacion = 10f;
@@ -38,6 +39,7 @@ public class PlayerController : MonoBehaviour
     // Variables de animación
     private float velocidadActualAnimacion;
     private float velocidadAnimacionTarget;
+    private float tiempoCayendo = 0f;
 
     void Start()
     {
@@ -105,8 +107,27 @@ public class PlayerController : MonoBehaviour
         if (enSuelo)
         {
             saltosRealizados = 0;
+
+            // Verificar si estamos sobre un trampolín
+            RaycastHit hit;
+            // Lanzamos un rayo un poco más largo para asegurar detección
+            if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, 0.5f))
+            {
+                Trampoline trampolin = hit.collider.GetComponent<Trampoline>();
+                if (trampolin != null)
+                {
+                    // Aplicar fuerza de rebote
+                    velocidad.y = trampolin.fuerzaRebote;
+                    
+                    // Opcional: Trigger animación de salto
+                    if (animator != null) animator.SetTrigger("Jump");
+                    
+                    // Salimos para no aplicar la fuerza hacia abajo
+                    return;
+                }
+            }
             
-            // Si está cayendo, resetear la velocidad vertical
+            // Si está cayendo (y no es trampolín), resetear la velocidad vertical
             if (velocidad.y < 0)
             {
                 velocidad.y = -2f; // Pequeña fuerza hacia abajo para mantenerlo pegado
@@ -238,10 +259,19 @@ public class PlayerController : MonoBehaviour
         // Detectar si está cayendo
         if (!enSuelo && velocidad.y < -2f)
         {
-            animator.SetBool("isFalling", true);
+            tiempoCayendo += Time.deltaTime;
+            if (tiempoCayendo > 1.0f)
+            {
+                animator.SetBool("isFalling", true);
+            }
+            else
+            {
+                animator.SetBool("isFalling", false);
+            }
         }
         else
         {
+            tiempoCayendo = 0f;
             animator.SetBool("isFalling", false);
         }
 
@@ -259,5 +289,23 @@ public class PlayerController : MonoBehaviour
         Gizmos.color = controller != null && controller.isGrounded ? Color.green : Color.red;
         Gizmos.DrawRay(transform.position + Vector3.up * 0.1f, Vector3.down * 0.2f);
         Gizmos.DrawWireSphere(transform.position, 0.1f);
+    }
+
+    // Detectar colisiones con el Character Controller
+    void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        // Verificar si el objeto con el que chocamos está en la capa de muerte
+        // Usamos bit shifting para comprobar la máscara
+        if ((capaMuerte.value & (1 << hit.gameObject.layer)) > 0)
+        {
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.GameOver();
+            }
+            else
+            {
+                Debug.LogError("GameManager no encontrado en la escena");
+            }
+        }
     }
 }
