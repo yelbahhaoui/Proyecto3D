@@ -56,7 +56,6 @@ public class MenuManager : MonoBehaviour
 
     public void SetVolume(float volume)
     {
-        // Controlar volumen global (0.0 a 1.0)
         AudioListener.volume = volume;
     }
 }

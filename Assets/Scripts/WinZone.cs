@@ -10,7 +10,6 @@ public class WinZone : MonoBehaviour
         if (ganadado) return;
 
         ganadado = true;
-        Debug.Log("¡Nivel Completado!");
         
         if (GameManager.Instance != null)
         {
@@ -26,7 +25,6 @@ public class WinZone : MonoBehaviour
         }
     }
 
-    // Añadir también OnTriggerEnter por si acaso el collider es Trigger
     void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Player"))

@@ -7,7 +7,5 @@ public class Trampoline : MonoBehaviour
 
     void OnCollisionEnter(Collision collision)
     {
-        // Nota: CharacterController no siempre dispara OnCollisionEnter de forma fiable
-        // Es mejor detectarlo desde el PlayerController
     }
 }

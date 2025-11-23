@@ -3,16 +3,16 @@ using UnityEngine;
 public class SkyManager : MonoBehaviour
 {
     [Header("Configuración del Cielo")]
-    public Color colorCielo = new Color(0.05f, 0.05f, 0.1f); // Azul muy oscuro
+    public Color colorCielo = new Color(0.05f, 0.05f, 0.1f);
     public Color colorHorizonte = new Color(0.1f, 0.1f, 0.2f);
     public Color colorSuelo = Color.black;
     
     [Header("Estrellas")]
     public int cantidadEstrellas = 1000;
     public float distanciaEstrellas = 100f;
-    public float tamañoEstrellas = 0.2f; // Un poco más grandes para que se vean mejor
+    public float tamañoEstrellas = 0.2f;
     [Range(0, 1)]
-    public float porcentajeConLuz = 0.1f; // Porcentaje de estrellas que tienen luz real
+    public float porcentajeConLuz = 0.1f;
 
     private GameObject starSystemObj;
 
@@ -24,7 +24,6 @@ public class SkyManager : MonoBehaviour
 
     void Update()
     {
-        // Hacer que las estrellas sigan a la cámara para que siempre parezcan lejanas
         if (starSystemObj != null && Camera.main != null)
         {
             starSystemObj.transform.position = Camera.main.transform.position;
@@ -33,13 +32,11 @@ public class SkyManager : MonoBehaviour
 
     void ConfigurarIluminacion()
     {
-        // Configurar luz ambiental
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
         RenderSettings.ambientSkyColor = colorCielo;
         RenderSettings.ambientEquatorColor = colorHorizonte;
         RenderSettings.ambientGroundColor = colorSuelo;
 
-        // Configurar fondo de cámara
         if (Camera.main != null)
         {
             Camera.main.clearFlags = CameraClearFlags.SolidColor;
@@ -71,31 +68,26 @@ public class SkyManager : MonoBehaviour
         var shape = ps.shape;
         shape.shapeType = ParticleSystemShapeType.Sphere;
         shape.radius = distanciaEstrellas;
-        shape.radiusThickness = 0f; // Solo en la superficie de la esfera
+        shape.radiusThickness = 0f;
 
-        // Configurar Material Brillante
         var renderer = ps.GetComponent<ParticleSystemRenderer>();
         Material starMat = new Material(Shader.Find("Particles/Standard Unlit"));
-        starMat.color = new Color(1f, 1f, 1f, 1f); // Blanco puro
-        // Si tienes post-processing con Bloom, puedes aumentar la intensidad aquí:
-        // starMat.SetColor("_Color", new Color(2f, 2f, 2f, 1f)); 
+        starMat.color = new Color(1f, 1f, 1f, 1f);
         renderer.material = starMat;
 
-        // Configurar Luces (Lights Module)
         var lights = ps.lights;
         lights.enabled = true;
-        lights.ratio = porcentajeConLuz; // No todas las estrellas necesitan luz real
-        lights.maxLights = 50; // Límite para rendimiento
+        lights.ratio = porcentajeConLuz;
+        lights.maxLights = 50;
 
-        // Crear plantilla de luz
         GameObject lightTemplate = new GameObject("StarLightTemplate");
         lightTemplate.transform.parent = starSystemObj.transform;
         Light lightComp = lightTemplate.AddComponent<Light>();
         lightComp.type = LightType.Point;
         lightComp.range = 20f;
         lightComp.intensity = 2f;
-        lightComp.color = new Color(1f, 1f, 0.8f); // Ligeramente amarillento
-        lightTemplate.SetActive(false); // Ocultar plantilla
+        lightComp.color = new Color(1f, 1f, 0.8f);
+        lightTemplate.SetActive(false);
 
         lights.light = lightComp;
     }
