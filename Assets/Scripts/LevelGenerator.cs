@@ -1,4 +1,5 @@
 using UnityEngine;
+using TMPro; // Necesario para TextMeshPro
 
 public class LevelGenerator : MonoBehaviour
 {
@@ -19,6 +20,13 @@ public class LevelGenerator : MonoBehaviour
     public Material materialTrampolin;
     public Color colorTrampolin = Color.red;
     public float multiplicadorDistanciaSalto = 2.5f; // Cuánto más lejos estará la siguiente plataforma
+
+    [Header("Plataformas Extendidas")]
+    [Range(0f, 1f)]
+    public float probabilidadExtendida = 0.15f;
+    public GameObject escaleraPrefab;
+    public float longitudExtendida = 3f; // Multiplicador de longitud
+    public Vector3 offsetEscalera = new Vector3(0, 0.5f, 0.5f); // Ajuste de posición de la escalera relativo al final
 
     [Header("Distancias entre Plataformas")]
     public float minX = -2f; // Variación lateral mínima
@@ -67,15 +75,23 @@ public class LevelGenerator : MonoBehaviour
 
         for (int i = 0; i < cantidadPlataformas; i++)
         {
-            // Determinar si esta plataforma será un trampolín (para la SIGUIENTE distancia)
-            // No poner trampolín en la última ni en la penúltima (para asegurar llegada a meta)
+            // Determinar si esta plataforma será un trampolín o extendida
             bool esTrampolin = false;
+            bool esExtendida = false;
+
+            // Solo si no es la última ni penúltima, y no venimos de un salto largo
             if (!siguienteEsSaltoLargo && i < cantidadPlataformas - 2)
             {
-                if (Random.value < probabilidadTrampolin)
+                float rnd = Random.value;
+                if (rnd < probabilidadTrampolin)
                 {
                     esTrampolin = true;
                     siguienteEsSaltoLargo = true;
+                }
+                else if (rnd < probabilidadTrampolin + probabilidadExtendida)
+                {
+                    esExtendida = true;
+                    // Extendida no implica salto largo necesariamente, pero ajustaremos la posición
                 }
             }
             else
@@ -88,30 +104,16 @@ public class LevelGenerator : MonoBehaviour
             float y = Random.Range(minY, maxY);
             float z = Random.Range(minZ, maxZ);
 
-            // Si la ANTERIOR fue trampolín, esta distancia debe ser mayor
-            // (En este loop, 'siguienteEsSaltoLargo' se refiere a la distancia DESDE esta plataforma HACIA la siguiente)
-            // Espera, la lógica es:
-            // 1. Creo plataforma i.
-            // 2. Si i es trampolín, la distancia a i+1 debe ser grande.
-            // 3. Si i-1 fue trampolín, la distancia a i ya fue calculada grande.
-            
-            // Vamos a reestructurar un poco:
-            // Calculamos la posición de ESTA plataforma basándonos en si la ANTERIOR era trampolín.
-            // Pero ya tenemos 'posicionActual' que es donde debe ir esta.
-            // Lo que cambia es cómo calculamos la posición de la SIGUIENTE (al final del loop).
-            
             // Instanciar la plataforma en la posición actual
             GameObject nuevaPlataforma = Instantiate(plataformaPrefab, posicionActual, Quaternion.identity);
             nuevaPlataforma.transform.parent = transform;
 
-            // Configurar Trampolín si toca
+            // Configurar Trampolín
             if (esTrampolin)
             {
-                // Añadir componente Trampoline
                 Trampoline t = nuevaPlataforma.AddComponent<Trampoline>();
                 t.fuerzaRebote = fuerzaRebote;
 
-                // Cambiar visual
                 Renderer rend = nuevaPlataforma.GetComponent<Renderer>();
                 if (rend != null)
                 {
@@ -123,7 +125,53 @@ public class LevelGenerator : MonoBehaviour
                 
                 nuevaPlataforma.name = $"Plataforma_Trampolin_{i}";
             }
-            else if (i == cantidadPlataformas - 1) // Última plataforma (Meta)
+            // Configurar Extendida
+            else if (esExtendida)
+            {
+                // Escalar la plataforma en Z
+                Vector3 scale = nuevaPlataforma.transform.localScale;
+                scale.z *= longitudExtendida;
+                nuevaPlataforma.transform.localScale = scale;
+
+                // Instanciar escalera al final
+                if (escaleraPrefab != null)
+                {
+                    // Instanciar en el mundo primero
+                    GameObject escalera = Instantiate(escaleraPrefab);
+                    
+                    // Calcular la posición del borde final en coordenadas mundiales
+                    // Asumimos que el pivote está en el centro. 
+                    // Borde Z = forward * (escalaZ * 0.5)
+                    // Borde Y (arriba) = up * (escalaY * 0.5)
+                    
+                    float halfLength = nuevaPlataforma.transform.localScale.z * 0.5f;
+                    float halfHeight = nuevaPlataforma.transform.localScale.y * 0.5f;
+
+                    Vector3 posicionBorde = nuevaPlataforma.transform.position 
+                                          + (nuevaPlataforma.transform.forward * halfLength) 
+                                          + (nuevaPlataforma.transform.up * halfHeight);
+
+                    // Colocar la escalera en ese borde
+                    escalera.transform.position = posicionBorde;
+                    escalera.transform.rotation = nuevaPlataforma.transform.rotation;
+
+                    // Ahora emparentar
+                    escalera.transform.SetParent(nuevaPlataforma.transform, true);
+
+                    // Corregir la escala del hijo (al emparentar hereda la escala del padre, hay que invertirla)
+                    Vector3 childScale = escalera.transform.localScale;
+                    childScale.z /= longitudExtendida; 
+                    escalera.transform.localScale = childScale;
+                }
+                else
+                {
+                    Debug.LogWarning($"⚠️ Plataforma {i} es extendida pero no hay 'Escalera Prefab' asignado.");
+                }
+
+                nuevaPlataforma.name = $"Plataforma_Extendida_{i}";
+            }
+            // Configurar Meta
+            else if (i == cantidadPlataformas - 1) 
             {
                 Renderer rend = nuevaPlataforma.GetComponent<Renderer>();
                 if (rend != null)
@@ -135,14 +183,37 @@ public class LevelGenerator : MonoBehaviour
                 }
                 nuevaPlataforma.AddComponent<WinZone>();
                 nuevaPlataforma.name = "Plataforma_Final";
+
+                // Añadir sistema de partículas
+                GameObject particlesObj = new GameObject("WinParticles");
+                particlesObj.transform.parent = nuevaPlataforma.transform;
+                particlesObj.transform.localPosition = Vector3.up * 0.5f; 
+                
+                ParticleSystem ps = particlesObj.AddComponent<ParticleSystem>();
+                var main = ps.main;
+                main.startColor = Color.yellow;
+                main.startSize = 0.2f;
+                main.startSpeed = 0.5f;
+                main.startLifetime = 2f;
+                main.simulationSpace = ParticleSystemSimulationSpace.World;
+                
+                var emission = ps.emission;
+                emission.rateOverTime = 20f;
+                
+                var shape = ps.shape;
+                shape.shapeType = ParticleSystemShapeType.Sphere;
+                shape.radius = 1f;
+
+                var renderer = ps.GetComponent<ParticleSystemRenderer>();
+                renderer.material = new Material(Shader.Find("Particles/Standard Unlit"));
             }
             else
             {
                 nuevaPlataforma.name = $"Plataforma_{i}";
             }
 
-            // Rotación
-            if (rotacionAleatoria)
+            // Rotación (solo si no es extendida para evitar problemas con la escalera)
+            if (rotacionAleatoria && !esExtendida)
             {
                 nuevaPlataforma.transform.Rotate(Vector3.up, Random.Range(-rangoRotacionY, rangoRotacionY));
             }
@@ -150,7 +221,14 @@ public class LevelGenerator : MonoBehaviour
             // Calcular posición para la SIGUIENTE plataforma
             float multiplicador = esTrampolin ? multiplicadorDistanciaSalto : 1f;
             
-            // Si es trampolín, aumentamos mucho la Y y la Z
+            // Si es extendida, movemos el punto de origen hacia adelante para compensar la longitud extra
+            if (esExtendida)
+            {
+                // Asumiendo que el pivote es central, avanzamos la mitad de la longitud extra
+                // Longitud extra total = (longitudExtendida - 1) * escalaBase (asumimos 1)
+                posicionActual += nuevaPlataforma.transform.forward * (longitudExtendida - 1) * 0.5f;
+            }
+
             Vector3 offset = new Vector3(x, y * multiplicador, z * multiplicador);
             posicionActual += offset;
         }

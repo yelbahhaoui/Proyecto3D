@@ -26,6 +26,17 @@ public class PlayerController : MonoBehaviour
     public Animator animator;
     public float suavizadoAnimacion = 0.1f;
 
+    [Header("Iluminación")]
+    public bool usarLuzPropia = true;
+    public Color colorLuz = new Color(1f, 0.95f, 0.8f);
+    public float rangoLuz = 15f;
+    public float intensidadLuz = 1.5f;
+
+    [Header("Audio")]
+    public AudioClip sonidoPincho;
+    public AudioClip sonidoTrampolin;
+    private AudioSource audioSource;
+
     // Referencias
     private CharacterController controller;
     private Transform cameraTransform;
@@ -33,6 +44,7 @@ public class PlayerController : MonoBehaviour
     // Variables de movimiento
     private Vector3 velocidad;
     private Vector3 velocidadMovimiento;
+    private Vector3 velocidadEmpuje; // Nueva variable para el knockback
     private bool enSuelo;
     private int saltosRealizados = 0;
     
@@ -76,6 +88,30 @@ public class PlayerController : MonoBehaviour
         // Bloquear y ocultar el cursor
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+
+        // Configurar luz del jugador
+        if (usarLuzPropia)
+        {
+            // Verificar si ya tiene una luz para no duplicar
+            if (GetComponentInChildren<Light>() == null)
+            {
+                GameObject lightObj = new GameObject("LuzJugador");
+                lightObj.transform.parent = transform;
+                lightObj.transform.localPosition = Vector3.up * 10f; // Un poco por encima de la cabeza
+                
+                Light lightComp = lightObj.AddComponent<Light>();
+                lightComp.type = LightType.Point;
+                lightComp.range = rangoLuz;
+                lightComp.intensity = intensidadLuz;
+                lightComp.color = colorLuz;
+                lightComp.shadows = LightShadows.Soft;
+                lightComp.renderMode = LightRenderMode.ForcePixel;
+            }
+        }
+        
+        // Configurar AudioSource
+        audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
         
         Debug.Log("✅ PlayerController inicializado correctamente");
     }
@@ -96,11 +132,20 @@ public class PlayerController : MonoBehaviour
         // Detectar si está en el suelo usando el Character Controller
         enSuelo = controller.isGrounded;
         
-        // También verificar con un raycast adicional para mayor precisión
+        // Refuerzo con SphereCast (es como una esfera invisible en los pies, mejor que un rayo fino)
         if (!enSuelo)
         {
-            Ray ray = new Ray(transform.position + Vector3.up * 0.1f, Vector3.down);
-            enSuelo = Physics.Raycast(ray, 0.2f, capaSuelo);
+            // Usamos el radio del propio controller un poco reducido
+            float radio = controller.radius * 0.9f;
+            // Lanzamos desde un poco arriba
+            Vector3 origen = transform.position + Vector3.up * controller.radius;
+            // Distancia suficiente para tocar el suelo
+            float distancia = controller.radius + 0.1f;
+
+            if (Physics.SphereCast(origen, radio, Vector3.down, out RaycastHit hit, distancia, capaSuelo))
+            {
+                enSuelo = true;
+            }
         }
 
         // Resetear saltos cuando toca el suelo
@@ -119,6 +164,9 @@ public class PlayerController : MonoBehaviour
                     // Aplicar fuerza de rebote
                     velocidad.y = trampolin.fuerzaRebote;
                     
+                    // Sonido trampolín
+                    if (sonidoTrampolin != null) audioSource.PlayOneShot(sonidoTrampolin);
+
                     // Opcional: Trigger animación de salto
                     if (animator != null) animator.SetTrigger("Jump");
                     
@@ -187,19 +235,42 @@ public class PlayerController : MonoBehaviour
             // Usar gravedad más fuerte al caer para mejor sensación
             float gravedadActual = velocidad.y > 0 ? gravedad : gravedadCaida;
             velocidad.y -= gravedadActual * Time.deltaTime;
+
+            // Limitar velocidad máxima de caída para evitar atravesar el suelo (Clipping)
+            velocidad.y = Mathf.Max(velocidad.y, -40f);
         }
         else
         {
             // Cuando está en el suelo, mantener una pequeña fuerza hacia abajo
             if (velocidad.y < 0)
             {
-                velocidad.y = -2f;
+                velocidad.y = -5f; // Aumentado un poco para asegurar contacto
             }
         }
 
         // Combinar movimiento horizontal y vertical en un solo Move
-        Vector3 movimientoFinal = velocidadMovimiento + velocidad;
+        // Sumamos el empuje (knockback) al movimiento final
+        Vector3 movimientoFinal = velocidadMovimiento + velocidad + velocidadEmpuje;
         controller.Move(movimientoFinal * Time.deltaTime);
+
+        // Reducir el empuje suavemente con el tiempo (fricción)
+        if (velocidadEmpuje.magnitude > 0.1f)
+        {
+            velocidadEmpuje = Vector3.Lerp(velocidadEmpuje, Vector3.zero, 5f * Time.deltaTime);
+        }
+        else
+        {
+            velocidadEmpuje = Vector3.zero;
+        }
+
+        // Detectar colisión con el techo (si saltamos y chocamos con una plataforma arriba)
+        if ((controller.collisionFlags & CollisionFlags.Above) != 0)
+        {
+            if (velocidad.y > 0)
+            {
+                velocidad.y = -2f; // Forzar caída inmediata al chocar con el techo
+            }
+        }
     }
 
     void Saltar()
@@ -257,10 +328,11 @@ public class PlayerController : MonoBehaviour
         animator.SetFloat("VelocityY", velocidad.y);
 
         // Detectar si está cayendo
-        if (!enSuelo && velocidad.y < -2f)
+        if (!enSuelo && velocidad.y < -5f)
         {
             tiempoCayendo += Time.deltaTime;
-            if (tiempoCayendo > 1.0f)
+            // Ajustado a 0.8s: suficiente para ignorar saltos normales, pero detecta caídas al vacío
+            if (tiempoCayendo > 0.8f)
             {
                 animator.SetBool("isFalling", true);
             }
@@ -282,6 +354,27 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    // Función pública para aplicar empuje desde otros scripts (como los pinchos)
+    public void AplicarEmpuje(Vector3 direccion, float fuerza)
+    {
+        // Normalizamos la dirección y aplicamos la fuerza
+        direccion.Normalize();
+        
+        // Añadimos un poco de fuerza hacia arriba para que haga un pequeño arco
+        direccion.y = 0.5f; 
+        
+        velocidadEmpuje = direccion * fuerza;
+        
+        // Reseteamos la velocidad vertical actual para que el empuje sea consistente
+        velocidad.y = 0;
+        
+        // Sonido pincho
+        if (sonidoPincho != null) audioSource.PlayOneShot(sonidoPincho);
+
+        // Opcional: Activar animación de daño o caída
+        if (animator != null) animator.SetTrigger("Jump"); // Reusamos jump o creamos uno nuevo
+    }
+
     // Visualizar información de depuración en el editor
     void OnDrawGizmosSelected()
     {
@@ -295,17 +388,32 @@ public class PlayerController : MonoBehaviour
     void OnControllerColliderHit(ControllerColliderHit hit)
     {
         // Verificar si el objeto con el que chocamos está en la capa de muerte
-        // Usamos bit shifting para comprobar la máscara
         if ((capaMuerte.value & (1 << hit.gameObject.layer)) > 0)
         {
             if (GameManager.Instance != null)
             {
                 GameManager.Instance.GameOver();
             }
-            else
-            {
-                Debug.LogError("GameManager no encontrado en la escena");
-            }
+        }
+
+        // Verificar si tocamos la zona de victoria (WinZone)
+        WinZone winZone = hit.gameObject.GetComponent<WinZone>();
+        if (winZone != null)
+        {
+            winZone.JugadorTocoPlataforma();
+        }
+
+        // Verificar si tocamos un pincho
+        Spike spike = hit.gameObject.GetComponent<Spike>();
+        if (spike == null) 
+        {
+            // Intentar buscar en el padre por si el collider está en un hijo
+            spike = hit.gameObject.GetComponentInParent<Spike>();
+        }
+
+        if (spike != null)
+        {
+            spike.OnPlayerHit(gameObject);
         }
     }
 }
