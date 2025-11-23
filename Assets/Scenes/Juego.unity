@@ -7751,7 +7751,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4338731827272396989, guid: e98a018c1a5e7844caa0e82d6462e21f, type: 3}
       propertyPath: m_text
-      value: Trampolindelante!!
+      value: Trampolin delante!!
       objectReference: {fileID: 0}
     - target: {fileID: 5610382620664815576, guid: e98a018c1a5e7844caa0e82d6462e21f, type: 3}
       propertyPath: m_Name
